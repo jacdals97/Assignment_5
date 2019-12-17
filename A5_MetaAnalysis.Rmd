@@ -1,0 +1,310 @@
+---
+title: "Assignment 5 - Meta-analysis of pitch in schizophrenia"
+author: "Riccardo Fusaroli"
+date: "3/7/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Building on the shoulders of giants: meta-analysis
+
+## Questions to be answered
+
+1. What is the current evidence for distinctive vocal patterns in schizophrenia? Report how many papers report quantitative estimates, comment on what percentage of the overall studies reviewed they represent (see PRISMA chart) your method to analyze them, the estimated effect size of the difference (mean effect size and standard error) and forest plots representing it. N.B. Only measures of pitch mean and pitch sd are required for the assignment. Feel free to ignore the rest (although pause behavior looks interesting, if you check my article).
+
+```{r}
+library(pacman)
+
+p_load(tidyverse, lme4, metafor, reshape2)
+
+meta <- read.csv2("Matrix_MetaAnalysis_Diagnosis_check.csv", header = T, stringsAsFactors = F)[,1:33]
+
+meta[,25:28] <- lapply(meta[,25:28], as.numeric)
+meta[,30:33] <- lapply(meta[,30:33], as.numeric)
+meta[,9:12] <- lapply(meta[,9:12], as.numeric)
+meta[,21:22] <- lapply(meta[,21:22], as.numeric)
+meta <- meta[1:57,]
+
+
+#We eyeballed the amount of studies with no means or SD
+nrow(meta[c(2, 10,11,12, 14,15, 18, 21, 23, 25,26,27,28,29, 31:43, 48, 49, 50, 56),])/nrow(meta)*100
+
+nrow(meta[-c(2, 10,11,12, 14,15, 18, 21, 23, 25,26,27,28,29, 31:43, 48, 49, 50, 56),])
+
+
+#
+frequency_df <- meta[-c(2, 10,11,12, 14,15, 18, 21, 23, 25,26,27,28,29, 31:43, 48, 49, 50, 56:57),]
+frequency_df <- filter(frequency_df, frequency_df$frequency != "semitones")
+frequency_df<- frequency_df[-c(5:8, 10:14, 18:24),]
+
+
+Pitch_meanES <- escalc("SMD", n1i = SAMPLE_SIZE_SZ, n2i = SAMPLE_SIZE_HC,
+       m1i = PITCH_F0_SZ_M, m2i = PITCH_F0_HC_M,
+       sd1i = PITCH_F0_SZ_SD, sd2i = PITCH_F0_HC_SD,
+       data = frequency_df)
+
+
+Pitch_meanES$Article <- as.factor(Pitch_meanES$Article)
+Pitch_meanES$TYPE_OF_TASK <- as.factor(Pitch_meanES$TYPE_OF_TASK)
+Pitch_meanES <- filter(Pitch_meanES, Pitch_meanES$yi != "NA")
+
+sum(Pitch_meanES$SAMPLE_SIZE_HC)
+sum(Pitch_meanES$SAMPLE_SIZE_SZ)
+
+weighted_mean <- lmer(yi ~ 1 + (1|Article), weight = 1/vi, Pitch_meanES, REML=F,
+control = lmerControl(check.nobs.vs.nlev = "ignore", check.nobs.vs.nRE = "ignore", optimizer = "nloptwrap",
+  calc.derivs = F,
+  optCtrl = list(
+    ftol_abs = 1e-10,
+    xtol_abs = 1e-10,
+    maxeval = 10000
+  )))
+
+summary(weighted_mean)
+summary(lmerTest::as_lmerModLmerTest(weighted_mean))
+
+
+
+Meta_model <- rma(yi, vi, data = Pitch_meanES, slab=Article)
+forest(Meta_model)
+
+
+
+
+
+
+
+
+#Pitch variability
+variability_df <- meta[-c(2, 10,11,12, 14,15, 18, 21, 23, 25,26,27,28,29, 31:43, 48, 49, 50, 56:57),]
+variability_df<- variability_df[-c(1:3, 5:7, 9, 11:18, 21, 24:26),]
+
+
+Pitch_var_meanES <- escalc("SMD", n1i = SAMPLE_SIZE_SZ, n2i = SAMPLE_SIZE_HC,
+       m1i = PITCH_F0SD_SZ_M, m2i = PITCH_F0SD_HC_M,
+       sd1i = PITCH_F0SD_SZ_SD, sd2i = PITCH_F0SD_HC_SD,
+       data = variability_df)
+
+
+Pitch_var_meanES$Article <- as.factor(Pitch_var_meanES$Article)
+Pitch_var_meanES$TYPE_OF_TASK <- as.factor(Pitch_var_meanES$TYPE_OF_TASK)
+Pitch_var_meanES <- filter(Pitch_var_meanES, Pitch_var_meanES$yi != "NA")
+
+sum(Pitch_var_meanES$SAMPLE_SIZE_HC)
+sum(Pitch_var_meanES$SAMPLE_SIZE_SZ)
+
+weighted_mean_var <- lmer(yi ~ 1 + (1|Article), weight = 1/vi, Pitch_var_meanES, REML=F,
+control = lmerControl(check.nobs.vs.nlev = "ignore", check.nobs.vs.nRE = "ignore", optimizer = "nloptwrap",
+  calc.derivs = F,
+  optCtrl = list(
+    ftol_abs = 1e-10,
+    xtol_abs = 1e-10,
+    maxeval = 10000
+  )))
+
+summary(weighted_mean_var)
+summary(lmerTest::as_lmerModLmerTest(weighted_mean_var))
+
+
+weighted_mean_var_by_condition <- lmer(yi ~ 0 + TYPE_OF_TASK + (0 + TYPE_OF_TASK|Article), weight = 1/vi, Pitch_var_meanES, REML=F,control = lmerControl(check.nobs.vs.nlev = "ignore", check.nobs.vs.nRE = "ignore", optimizer = "nloptwrap",
+  calc.derivs = F,
+  optCtrl = list(
+    ftol_abs = 1e-10,
+    xtol_abs = 1e-10,
+    maxeval = 10000
+  )))
+
+summary(weighted_mean_var_by_condition)
+summary(lmerTest::as_lmerModLmerTest(weighted_mean_var_by_condition))
+
+Meta_model_var <- rma(yi, vi, data = Pitch_var_meanES, slab=Article)
+forest(Meta_model_var)
+
+Meta_model_var_w_ran <- rma(yi, vi, mods = cbind(TYPE_OF_TASK), data = Pitch_var_meanES, slab=Article)
+forest(Meta_model_var_w_ran)
+
+
+
+```
+
+
+
+2. Do the results match your own analysis from Assignment 3? If you add your results to the meta-analysis, do the estimated effect sizes change? Report the new estimates and the new forest plots.
+
+```{r}
+
+#Including our data
+our_data <- read.csv("Merged__scaled_data.csv")
+
+sum_df <- our_data %>% group_by(Study.x, Diagnosis.x) %>% summarise(mean(mean), mean(sd), sd(mean), sd(sd), n = length(unique(ID)))
+
+
+sum_df_wide <- spread(sum_df, Diagnosis.x, "mean(mean)")
+sum_df_wide[8:9] <- spread(sum_df, Diagnosis.x, "sd(mean)")[,6:7]
+sum_df_wide[10:11] <- spread(sum_df, Diagnosis.x, "mean(sd)")[,6:7]
+sum_df_wide[12:13] <- spread(sum_df, Diagnosis.x, "sd(sd)")[,6:7]
+sum_df_wide[14:15] <- spread(sum_df, Diagnosis.x, "n")[,6:7]
+
+colnames(sum_df_wide)[6:13] <- colnames(Pitch_meanES)[c(25:28, 30:33)]
+colnames(sum_df_wide)[14:15] <- colnames(Pitch_meanES)[21:22]
+colnames(sum_df_wide)[1] <- "Article"
+
+sum_df_wide <- sum_df_wide[,c(1, 6:15)]
+
+sum_df_wide <- aggregate(x=sum_df_wide[,2:11], by=list(name=sum_df_wide$Study.x), mean, na.rm = TRUE)
+sum_df_wide$TYPE_OF_TASK <- "FREE"
+
+sum(sum_df_wide$SAMPLE_SIZE_SZ)
+sum(sum_df_wide$SAMPLE_SIZE_HC)
+
+#New data frame including our own data
+meta2 <- bind_rows(meta[, c(7, 21:22, 23, 25:28, 30:33)], sum_df_wide)
+
+
+#
+frequency_df_own <- meta2[-c(2, 10,11,12, 14,15, 18, 20:21, 23, 25,26,27,28,29, 31:43, 48, 49, 50, 56:57),]
+frequency_df_own <- frequency_df_own[-c(5:8, 10:14, 18:24),] #
+
+Pitch_meanES_own <- escalc("SMD", n1i = SAMPLE_SIZE_SZ, n2i = SAMPLE_SIZE_HC,
+       m1i = PITCH_F0_SZ_M, m2i = PITCH_F0_HC_M,
+       sd1i = PITCH_F0_SZ_SD, sd2i = PITCH_F0_HC_SD,
+       data = frequency_df_own)
+
+
+Pitch_meanES_own$Article <- as.factor(Pitch_meanES_own$Article)
+Pitch_meanES_own$TYPE_OF_TASK <- as.factor(Pitch_meanES_own$TYPE_OF_TASK)
+Pitch_meanES_own <- filter(Pitch_meanES_own, Pitch_meanES_own$yi != "NA")
+
+sum(Pitch_meanES_own$SAMPLE_SIZE_HC)
+sum(Pitch_meanES_own$SAMPLE_SIZE_SZ)
+
+weighted_mean_own <- lmer(yi ~ 1 + (1|Article), weight = 1/vi, Pitch_meanES_own, REML=F,
+control = lmerControl(check.nobs.vs.nlev = "ignore", check.nobs.vs.nRE = "ignore", optimizer = "nloptwrap",
+  calc.derivs = F,
+  optCtrl = list(
+    ftol_abs = 1e-10,
+    xtol_abs = 1e-10,
+    maxeval = 10000
+  )))
+
+summary(weighted_mean_own)
+summary(lmerTest::as_lmerModLmerTest(weighted_mean_own))
+
+
+weighted_mean_own_by_condition <- lmer(yi ~ 0 + TYPE_OF_TASK + (0 + TYPE_OF_TASK|Article), weight = 1/vi, Pitch_meanES_own, REML=F,control = lmerControl(check.nobs.vs.nlev = "ignore", check.nobs.vs.nRE = "ignore", optimizer = "nloptwrap",
+  calc.derivs = F,
+  optCtrl = list(
+    ftol_abs = 1e-10,
+    xtol_abs = 1e-10,
+    maxeval = 10000
+  )))
+
+summary(weighted_mean_own_by_condition)
+summary(lmerTest::as_lmerModLmerTest(weighted_mean_own_by_condition))
+
+Meta_model_own <- rma(yi, vi, data = Pitch_meanES_own, slab=Article)
+forest(Meta_model_own)
+
+Meta_model_own_w_ran <- rma(yi, vi, mods = cbind(TYPE_OF_TASK), data = Pitch_meanES_own, slab=Article)
+forest(Meta_model_own_w_ran)
+
+
+
+
+
+#Pitch variability
+variability_df_own <- meta2[-c(2, 10,11,12, 14,15, 18, 21, 23, 25,26,27,28,29, 31:43, 48, 49, 50, 56:57),]
+variability_df_own <- variability_df_own[-c(1:3, 5:7, 9, 11:18, 21, 24:25),]
+
+
+Pitch_var_meanES_own <- escalc("SMD", n1i = SAMPLE_SIZE_SZ, n2i = SAMPLE_SIZE_HC,
+       m1i = PITCH_F0SD_SZ_M, m2i = PITCH_F0SD_HC_M,
+       sd1i = PITCH_F0SD_SZ_SD, sd2i = PITCH_F0SD_HC_SD,
+       data = variability_df_own)
+
+
+Pitch_var_meanES_own$Article <- as.factor(Pitch_var_meanES_own$Article)
+Pitch_var_meanES_own$TYPE_OF_TASK <- as.factor(Pitch_var_meanES_own$TYPE_OF_TASK)
+Pitch_var_meanES_own <- filter(Pitch_var_meanES_own, Pitch_var_meanES_own$yi != "NA")
+
+sum(Pitch_var_meanES_own$SAMPLE_SIZE_HC)
+sum(Pitch_var_meanES_own$SAMPLE_SIZE_SZ)
+
+weighted_mean_var_own <- lmer(yi ~ 1 + (1|Article), weight = 1/vi, Pitch_var_meanES_own, REML=F,
+control = lmerControl(check.nobs.vs.nlev = "ignore", check.nobs.vs.nRE = "ignore", optimizer = "nloptwrap",
+  calc.derivs = F,
+  optCtrl = list(
+    ftol_abs = 1e-10,
+    xtol_abs = 1e-10,
+    maxeval = 10000
+  )))
+
+summary(weighted_mean_var_own)
+summary(lmerTest::as_lmerModLmerTest(weighted_mean_var_own))
+
+
+weighted_mean_var_own_by_condition <- lmer(yi ~ 0 + TYPE_OF_TASK + (0 + TYPE_OF_TASK|Article), weight = 1/vi, Pitch_var_meanES_own, REML=F,control = lmerControl(check.nobs.vs.nlev = "ignore", check.nobs.vs.nRE = "ignore", optimizer = "nloptwrap",
+  calc.derivs = F,
+  optCtrl = list(
+    ftol_abs = 1e-10,
+    xtol_abs = 1e-10,
+    maxeval = 10000
+  )))
+
+summary(weighted_mean_var_own_by_condition)
+summary(lmerTest::as_lmerModLmerTest(weighted_mean_var_own_by_condition))
+
+Meta_model_var_own <- rma(yi, vi, data = Pitch_var_meanES_own, slab=Article)
+forest(Meta_model_var_own)
+
+Meta_model_var_own_w_ran <- rma(yi, vi, mods = cbind(TYPE_OF_TASK), data = Pitch_var_meanES_own, slab=Article)
+forest(Meta_model_var_own_w_ran)
+
+```
+
+
+3. Assess the quality of the literature: report and comment on heterogeneity of the studies (tau, I2), on publication bias (funnel plot), and on influential studies.
+
+```{r}
+
+summary(Meta_model)
+inf_meta_model <-  influence(summary(Meta_model))
+plot(inf_meta_model)
+print(inf_meta_model)
+
+
+summary(Meta_model_var_w_ran)
+inf_meta_model_var <-  influence(summary(Meta_model_var_w_ran))
+plot(inf_meta_model_var)
+print(inf_meta_model_var)
+
+summary(Meta_model_own_w_ran)
+inf_meta_model_own <-  influence(summary(Meta_model_own_w_ran))
+plot(inf_meta_model_own)
+print(inf_meta_model_own)
+
+summary(Meta_model_var_own_w_ran)
+inf_meta_model_var_own <-  influence(summary(Meta_model_var_own_w_ran))
+plot(inf_meta_model_var_own)
+print(inf_meta_model_var_own)
+
+```
+
+## Tips on the process to follow:
+
+- Download the data on all published articles analyzing voice in schizophrenia and the prisma chart as reference of all articles found and reviewed
+- Look through the dataset to find out which columns to use, and if there is any additional information written as comments (real world data is always messy!).
+    * Hint: PITCH_F0M and PITCH_F0SD group of variables are what you need
+    * Hint: Make sure you read the comments in the columns: `pitch_f0_variability`, `frequency`, `Title`,  `ACOUST_ANA_DESCR`, `DESCRIPTION`, and `COMMENTS`
+- Following the procedure in the slides calculate effect size and standard error of the effect size per each study. N.B. we focus on pitch mean and pitch standard deviation.
+ . first try using lmer (to connect to what you know of mixed effects models)
+ . then use rma() (to get some juicy additional statistics)
+
+- Build a forest plot of the results (forest(model))
+ 
+- Go back to Assignment 3, add your own study to the data table, and re-run meta-analysis. Do the results change?
+
+- Now look at the output of rma() and check tau and I2
